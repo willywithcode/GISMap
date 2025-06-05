@@ -1,0 +1,25 @@
+{
+  "postgis": {
+    "host": "localhost",
+    "port": 5432,
+    "database": "gisdb",
+    "username": "postgres",
+    "password": "88888888",
+    "connection_timeout": 30,
+    "max_connections": 10
+  },
+  "tables": {
+    "polygons": {
+      "table_name": "polygons",
+      "geometry_column": "geom",
+      "id_column": "id",
+      "limit": 1000
+    },
+    "points": {
+      "table_name": "points",
+      "geometry_column": "geom",
+      "id_column": "id",
+      "limit": 5000
+    }
+  }
+}

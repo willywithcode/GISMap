@@ -1,0 +1,44 @@
+{
+  "aircraft": {
+    "default_speed": 0.1,
+    "update_interval_ms": 1000,
+    "icon_size": 20,
+    "selection_radius": 15,
+    "max_aircraft": 100,
+    "boundary_bounce": true
+  },
+  "colors": {
+    "normal_state": "#0066CC",
+    "in_region_state": "#CC0000", 
+    "selected_state": "#FFCC00",
+    "highlight_color": "#FFFF00"
+  },
+  "movement": {
+    "boundary": {
+      "min_longitude": 105.0,
+      "max_longitude": 107.0,
+      "min_latitude": 20.0,
+      "max_latitude": 22.0
+    },
+    "random_velocity_range": {
+      "min": -0.002,
+      "max": 0.002
+    }
+  },
+  "regions": {
+    "hanoi": {
+      "name": "Hanoi Region",
+      "polygon": [
+        [105.850, 21.025],
+        [105.850, 21.035],
+        [105.860, 21.035],
+        [105.860, 21.025],
+        [105.850, 21.025]
+      ],
+      "detection_enabled": true,
+      "fill_color": "#FF000064",
+      "border_color": "#FF0000",
+      "border_width": 3
+    }
+  }
+}

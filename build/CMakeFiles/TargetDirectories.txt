@@ -1,0 +1,5 @@
+/home/william/Documents/VDT/GISMap/build/CMakeFiles/GISMap.dir
+/home/william/Documents/VDT/GISMap/build/CMakeFiles/edit_cache.dir
+/home/william/Documents/VDT/GISMap/build/CMakeFiles/rebuild_cache.dir
+/home/william/Documents/VDT/GISMap/build/CMakeFiles/GISMap_autogen_timestamp_deps.dir
+/home/william/Documents/VDT/GISMap/build/CMakeFiles/GISMap_autogen.dir

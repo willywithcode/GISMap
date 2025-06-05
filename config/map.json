@@ -1,0 +1,31 @@
+{
+  "map": {
+    "default_center": {
+      "longitude": 105.85,
+      "latitude": 21.03
+    },
+    "default_zoom": 12,
+    "min_zoom": 3,
+    "max_zoom": 18,
+    "tile_size": 256
+  },
+  "tile_servers": {
+    "openstreetmap": {
+      "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      "attribution": "© OpenStreetMap contributors",
+      "max_zoom": 19,
+      "enabled": true
+    },
+    "satellite": {
+      "url": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      "attribution": "© Esri",
+      "max_zoom": 17,
+      "enabled": false
+    }
+  },
+  "cache": {
+    "enabled": true,
+    "max_size_mb": 100,
+    "cache_directory": "resources/tiles"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "data_sources": {
+    "shapefiles": [
+      {
+        "name": "Vietnam Boundary",
+        "path": "resources/shapefiles/vn.shp",
+        "layer_name": "vietnam_boundary",
+        "color": "#0066FF",
+        "enabled": true,
+        "visible": true
+      },
+      {
+        "name": "Hanoi Districts",
+        "path": "resources/shapefiles/hanoi_districts.shp", 
+        "layer_name": "hanoi_districts",
+        "color": "#00AA00",
+        "enabled": false,
+        "visible": false
+      }
+    ],
+    "postgis_layers": [
+      {
+        "name": "Administrative Polygons",
+        "table": "polygons",
+        "geometry_column": "geom",
+        "color": "#AA0000",
+        "enabled": true,
+        "visible": true,
+        "query": "SELECT id, name, ST_AsText(geom) FROM polygons WHERE active = true LIMIT 100"
+      }
+    ]
+  },
+  "rendering": {
+    "polygon_opacity": 0.3,
+    "border_width": 2,
+    "antialiasing": true,
+    "high_quality_rendering": true
+  }
+}

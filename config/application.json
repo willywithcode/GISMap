@@ -1,0 +1,35 @@
+{
+  "application": {
+    "name": "GIS Map Application",
+    "version": "1.0.0",
+    "organization": "VDT Research",
+    "window": {
+      "width": 1200,
+      "height": 800,
+      "minimum_width": 800,
+      "minimum_height": 600,
+      "title": "GIS Map - Aircraft Tracking System"
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "file_enabled": true,
+    "console_enabled": true,
+    "log_directory": "logs",
+    "max_file_size_mb": 10,
+    "max_files": 5
+  },
+  "performance": {
+    "max_tiles_cache": 100,
+    "render_fps": 60,
+    "network_timeout_ms": 10000,
+    "max_concurrent_downloads": 4
+  },
+  "ui": {
+    "status_bar_enabled": true,
+    "toolbar_enabled": true,
+    "show_coordinates": true,
+    "show_zoom_level": true,
+    "theme": "default"
+  }
+}
