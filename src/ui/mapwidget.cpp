@@ -61,7 +61,7 @@ MapWidget::MapWidget(QWidget *parent) : QWidget(parent) {
               << QPointF(105.850, 21.025);  // Close polygon
     setPolygon(hanoiPoly);
     
-    fetchShapefile();
+    fetchShapefiles();
     fetchPostgis();
     
     // Create sample aircraft
@@ -385,97 +385,121 @@ void MapWidget::drawPolygons(QPainter &painter, const QVector<QPolygonF> &polygo
     }
 }
 
-void MapWidget::fetchShapefile() {
-    // Load shapefiles using configuration settings
+void MapWidget::fetchShapefiles() {
+    // Initialize GDAL/OGR for reading vector data
     GDALAllRegister();
     
     ConfigManager& config = ConfigManager::instance();
     
-    // First try to download Vietnam shapefile from simplemaps
-    QString shapefileUrl = "https://simplemaps.com/static/data/country-cities/vn/vn.zip";
-    QString localShapefilePath = "resources/shapefiles/vn.shp";
-    
-    // Create directory if it doesn't exist
-    QDir().mkpath("resources/shapefiles");
-    
-    // Download shapefile if not exists locally
-    if (!QFile::exists(localShapefilePath)) {
-        qDebug() << "Downloading Vietnam shapefile from simplemaps...";
-        
-        QNetworkAccessManager manager;
-        QNetworkRequest request{QUrl(shapefileUrl)};
-        request.setHeader(QNetworkRequest::UserAgentHeader, "GISMap/1.0 (Qt Application)");
-        
-        QEventLoop loop;
-        QNetworkReply *reply = manager.get(request);
-        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-        
-        // Add timeout
-        QTimer::singleShot(30000, &loop, &QEventLoop::quit);
-        loop.exec();
-        
-        if (reply->error() == QNetworkReply::NoError) {
-            QByteArray zipData = reply->readAll();
-            
-            // Save zip file temporarily
-            QString zipPath = "resources/shapefiles/vn.zip";
-            QFile zipFile(zipPath);
-            if (zipFile.open(QIODevice::WriteOnly)) {
-                zipFile.write(zipData);
-                zipFile.close();
-                qDebug() << "Downloaded shapefile zip to:" << zipPath;
-                
-                // TODO: Extract zip file (would need additional library like QuaZip)
-                // For now, we'll use local files if available
-            }
-        } else {
-            qDebug() << "Failed to download shapefile:" << reply->errorString();
-        }
-        reply->deleteLater();
-    }
-    
-    // Try to load each configured shapefile
-    QStringList shapefilePaths = {
-        localShapefilePath,
-        "resources/shapefiles/vn.shp",
-        "vn.shp"  // Fallback to current directory
+    // Try to load vector data files in priority order: GeoJSON first, then shapefiles
+    QStringList vectorDataPaths = {
+        "resources/shapefiles/vn.json",     // GeoJSON format (priority)
+        "resources/shapefiles/vn.shp",      // Shapefile format  
+        "vn.json",                          // Fallback to current directory
+        "vn.shp"                           // Fallback shapefile
     };
     
-    for (const QString& path : shapefilePaths) {
+    for (const QString& path : vectorDataPaths) {
+        QFileInfo fileInfo(path);
+        if (!fileInfo.exists()) {
+            qDebug() << "Vector data file not found:" << path;
+            continue;
+        }
+        
+        qDebug() << "Attempting to load vector data from:" << path;
+        
         GDALDataset *poDS = (GDALDataset*) GDALOpenEx(path.toLocal8Bit().data(), GDAL_OF_VECTOR, NULL, NULL, NULL);
         if (poDS) {
-            qDebug() << "Successfully opened shapefile:" << path;
+            qDebug() << "Successfully opened vector data:" << path;
             
             OGRLayer *poLayer = poDS->GetLayer(0);
+            if (!poLayer) {
+                qDebug() << "No layer found in vector data:" << path;
+                GDALClose(poDS);
+                continue;
+            }
+            
             OGRFeature *poFeature;
             poLayer->ResetReading();
             
             int featureCount = 0;
-            while ((poFeature = poLayer->GetNextFeature()) != nullptr && featureCount < 100) { // Limit for performance
+            int polygonCount = 0;
+            
+            // Process all features (no limit for GeoJSON, limited for performance with large shapefiles)
+            int maxFeatures = path.endsWith(".json") ? 1000 : 100; // More features for GeoJSON
+            
+            while ((poFeature = poLayer->GetNextFeature()) != nullptr && featureCount < maxFeatures) {
                 OGRGeometry *poGeometry = poFeature->GetGeometryRef();
-                if (poGeometry && wkbFlatten(poGeometry->getGeometryType()) == wkbPolygon) {
-                    OGRPolygon *poPolygon = (OGRPolygon *) poGeometry;
-                    OGRLinearRing *ring = poPolygon->getExteriorRing();
-                    QPolygonF qpoly;
-                    for (int i = 0; i < ring->getNumPoints(); ++i) {
-                        qpoly << QPointF(ring->getX(i), ring->getY(i));
+                if (poGeometry) {
+                    OGRwkbGeometryType geomType = wkbFlatten(poGeometry->getGeometryType());
+                    
+                    if (geomType == wkbPolygon) {
+                        // Handle single polygon
+                        OGRPolygon *poPolygon = (OGRPolygon *) poGeometry;
+                        OGRLinearRing *ring = poPolygon->getExteriorRing();
+                        if (ring && ring->getNumPoints() > 0) {
+                            QPolygonF qpoly;
+                            for (int i = 0; i < ring->getNumPoints(); ++i) {
+                                qpoly << QPointF(ring->getX(i), ring->getY(i));
+                            }
+                            m_shapefilePolygons.append(qpoly);
+                            polygonCount++;
+                        }
+                    } 
+                    else if (geomType == wkbMultiPolygon) {
+                        // Handle multipolygon (important for complex provinces)
+                        OGRMultiPolygon *poMultiPolygon = (OGRMultiPolygon *) poGeometry;
+                        for (int i = 0; i < poMultiPolygon->getNumGeometries(); ++i) {
+                            OGRGeometry *poSubGeom = poMultiPolygon->getGeometryRef(i);
+                            if (poSubGeom && wkbFlatten(poSubGeom->getGeometryType()) == wkbPolygon) {
+                                OGRPolygon *poPolygon = (OGRPolygon *) poSubGeom;
+                                OGRLinearRing *ring = poPolygon->getExteriorRing();
+                                if (ring && ring->getNumPoints() > 0) {
+                                    QPolygonF qpoly;
+                                    for (int j = 0; j < ring->getNumPoints(); ++j) {
+                                        qpoly << QPointF(ring->getX(j), ring->getY(j));
+                                    }
+                                    m_shapefilePolygons.append(qpoly);
+                                    polygonCount++;
+                                }
+                            }
+                        }
                     }
-                    m_shapefilePolygons.append(qpoly);
-                    featureCount++;
+                    
+                    // Log feature properties for GeoJSON
+                    if (path.endsWith(".json") && featureCount < 10) {
+                        const char* name = poFeature->GetFieldAsString("name");
+                        if (name && strlen(name) > 0) {
+                            qDebug() << "  Feature" << featureCount << ": Province =" << name;
+                        }
+                    }
                 }
+                
                 OGRFeature::DestroyFeature(poFeature);
+                featureCount++;
             }
             
-            qDebug() << "Loaded" << featureCount << "features from shapefile";
+            qDebug() << "Successfully loaded" << featureCount << "features with" << polygonCount << "polygons from" << path;
+            
+            if (path.endsWith(".json")) {
+                qDebug() << "Loaded Vietnam administrative boundaries from GeoJSON";
+            } else {
+                qDebug() << "Loaded boundaries from shapefile";
+            }
+            
             GDALClose(poDS);
             break; // Successfully loaded, don't try other paths
         } else {
-            qDebug() << "Failed to open shapefile:" << path;
+            qDebug() << "Failed to open vector data:" << path << "- GDAL Error:" << CPLGetLastErrorMsg();
         }
     }
     
     if (m_shapefilePolygons.isEmpty()) {
-        qDebug() << "No shapefiles loaded successfully";
+        qDebug() << "No vector data loaded successfully. Application will work without administrative boundaries.";
+        qDebug() << "To add Vietnam provinces, place vn.json in resources/shapefiles/ directory";
+    } else {
+        qDebug() << "Total polygons loaded:" << m_shapefilePolygons.size();
+        qDebug() << "Vietnam administrative boundaries ready for display";
     }
 }
 

@@ -65,7 +65,7 @@ private:
     void drawTiles(QPainter &painter);
     void drawPolygon(QPainter &painter, const QPolygonF &polygon, QColor color = Qt::red);
     void drawPolygons(QPainter &painter, const QVector<QPolygonF> &polygons, QColor color = Qt::blue);
-    void fetchShapefile();
+    void fetchShapefiles();
     void fetchPostgis();
     QPixmap createFallbackTile(int tileX, int tileY) const;
     
