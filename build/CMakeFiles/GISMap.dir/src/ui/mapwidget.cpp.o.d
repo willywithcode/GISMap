@@ -425,11 +425,14 @@ CMakeFiles/GISMap.dir/src/ui/mapwidget.cpp.o: \
  /usr/include/x86_64-linux-gnu/qt5/QtGui/QWheelEvent \
  /usr/include/x86_64-linux-gnu/qt5/QtCore/QDirIterator \
  /usr/include/x86_64-linux-gnu/qt5/QtCore/qdiriterator.h \
- /usr/include/x86_64-linux-gnu/qt5/QtCore/qdir.h /usr/include/gdal/gdal.h \
- /usr/include/gdal/gdal_version.h /usr/include/gdal/cpl_port.h \
- /usr/include/gdal/cpl_config.h /usr/include/c++/13/math.h \
- /usr/include/gdal/cpl_error.h /usr/include/gdal/cpl_progress.h \
- /usr/include/gdal/cpl_virtualmem.h /usr/include/gdal/cpl_vsi.h \
+ /usr/include/x86_64-linux-gnu/qt5/QtCore/qdir.h \
+ /usr/include/x86_64-linux-gnu/qt5/QtCore/QtMath \
+ /usr/include/x86_64-linux-gnu/qt5/QtCore/qmath.h \
+ /usr/include/gdal/gdal.h /usr/include/gdal/gdal_version.h \
+ /usr/include/gdal/cpl_port.h /usr/include/gdal/cpl_config.h \
+ /usr/include/c++/13/math.h /usr/include/gdal/cpl_error.h \
+ /usr/include/gdal/cpl_progress.h /usr/include/gdal/cpl_virtualmem.h \
+ /usr/include/gdal/cpl_vsi.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdbool.h /usr/include/unistd.h \
  /usr/include/x86_64-linux-gnu/bits/posix_opt.h \
  /usr/include/x86_64-linux-gnu/bits/environments.h \

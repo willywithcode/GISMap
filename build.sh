@@ -1,4 +1,4 @@
-#!/bin/bash
+n dê#!/bin/bash
 
 # GIS Map Application Build Script
 
