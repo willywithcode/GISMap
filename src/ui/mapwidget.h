@@ -40,6 +40,9 @@ public:
     void clearTileCache();
     qint64 getTileCacheSize() const; // Get cache size in MB
     void prefetchTiles(int radius = 1); // Prefetch surrounding tiles
+    
+    // Polygon refresh
+    void refreshPolygons();
 
 signals:
     void coordinatesChanged(double lon, double lat, int zoom);
@@ -74,6 +77,7 @@ private:
     void initializeFromConfig();
     void updateViewTransform();
     void createSampleAircraft();
+    void loadExistingAircraft();  // Load aircraft from database
     QString getCurrentTileServerUrl() const;
     
     // Tile caching methods

@@ -33,10 +33,22 @@ private slots:
     void onAircraftClicked(Aircraft* aircraft, const QPointF& position);
     void onTileServerChanged();
     void updateCacheStats(); // New slot for updating cache statistics
+    
+    // Aircraft management slots
+    void onAddAircraft();
+    void onEditAircraft();
+    void onDeleteAircraft();
+    
+    // Polygon management slots
+    void onEditPolygons();
+    
+    // Trail management slots  
+    void onToggleTrails();
+    void onClearTrails();
 
 private:
     void setupMenuBar();
-    void setupToolBar();
+    // void setupToolBar();  // Removed - only keep menu bar
     void updateTileServerActions();
     
     Ui::MainWindow *ui;
@@ -48,10 +60,22 @@ private:
     
     // Menu and toolbar components
     QMenuBar *m_menuBar;
-    QToolBar *m_toolBar;
+    // QToolBar *m_toolBar;  // Removed - only keep menu bar
     QActionGroup *m_tileServerGroup;
     QAction *m_openStreetMapAction;
     QAction *m_satelliteAction;
+    
+    // Aircraft management actions
+    QAction *m_addAircraftAction;
+    QAction *m_editAircraftAction;
+    QAction *m_deleteAircraftAction;
+    
+    // Polygon management actions
+    QAction *m_editPolygonsAction;
+    
+    // Trail management actions
+    QAction *m_toggleTrailsAction;
+    QAction *m_clearTrailsAction;
 };
 
 #endif // MAINWINDOW_H

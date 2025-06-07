@@ -21,11 +21,14 @@ set(CORE_SOURCES
 set(UI_SOURCES
     src/ui/mainwindow.cpp
     src/ui/mapwidget.cpp
+    src/ui/aircraftdialog.cpp
+    src/ui/polygoneditor.cpp
 )
 
 set(MODELS_SOURCES
     src/models/aircraft.cpp
     src/models/polygonobject.cpp
+    src/models/flightroute.cpp
 )
 
 set(LAYERS_SOURCES
@@ -35,6 +38,10 @@ set(LAYERS_SOURCES
 
 set(MANAGERS_SOURCES
     src/managers/aircraftmanager.cpp
+)
+
+set(SERVICES_SOURCES
+    src/services/databaseservice.cpp
 )
 
 # Header files (for IDE support)
@@ -47,11 +54,14 @@ set(CORE_HEADERS
 set(UI_HEADERS
     src/ui/mainwindow.h
     src/ui/mapwidget.h
+    src/ui/aircraftdialog.h
+    src/ui/polygoneditor.h
 )
 
 set(MODELS_HEADERS
     src/models/aircraft.h
     src/models/polygonobject.h
+    src/models/flightroute.h
 )
 
 set(LAYERS_HEADERS
@@ -61,6 +71,10 @@ set(LAYERS_HEADERS
 
 set(MANAGERS_HEADERS
     src/managers/aircraftmanager.h
+)
+
+set(SERVICES_HEADERS
+    src/services/databaseservice.h
 )
 
 # UI files
@@ -75,11 +89,13 @@ add_executable(GISMap
     ${MODELS_SOURCES}
     ${LAYERS_SOURCES}
     ${MANAGERS_SOURCES}
+    ${SERVICES_SOURCES}
     ${CORE_HEADERS}
     ${UI_HEADERS}
     ${MODELS_HEADERS}
     ${LAYERS_HEADERS}
     ${MANAGERS_HEADERS}
+    ${SERVICES_HEADERS}
     ${UI_FILES}
 )
 
@@ -93,6 +109,7 @@ target_include_directories(GISMap PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/models
     ${CMAKE_CURRENT_SOURCE_DIR}/src/layers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/managers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/services
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${GDAL_INCLUDE_DIRS} 
     ${PQXX_INCLUDE_DIRS}

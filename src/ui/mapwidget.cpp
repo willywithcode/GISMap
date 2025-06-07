@@ -1,5 +1,6 @@
 #include "mapwidget.h"
 #include "../core/configmanager.h"
+#include "../services/databaseservice.h"
 #include <QPainter>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -30,6 +31,12 @@ MapWidget::MapWidget(QWidget *parent) : QWidget(parent) {
     // Remove fixed minimum size, use size policy instead
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMinimumSize(400, 300);  // Set reasonable minimum but allow expansion
+    
+    // Initialize database service first (creates all tables)
+    DatabaseService& dbService = DatabaseService::instance();
+    if (!dbService.isConnected()) {
+        qWarning() << "Database connection failed! Some features may not work.";
+    }
     
     // Initialize configuration-based settings
     initializeFromConfig();
@@ -62,8 +69,8 @@ MapWidget::MapWidget(QWidget *parent) : QWidget(parent) {
     fetchShapefiles();  // Load Vietnam shapefile from SimpleMaps (for reference/display)
     fetchPostgis();     // Load the main Hanoi polygon from database
     
-    // Create sample aircraft
-    createSampleAircraft();
+    // Load existing aircraft from database first, then create samples if needed
+    loadExistingAircraft();
     
     // Emit initial coordinates
     emit coordinatesChanged(m_centerGeo.x(), m_centerGeo.y(), m_zoom);
@@ -1197,4 +1204,52 @@ void MapWidget::createHanoiPolygonInDatabase()
         qDebug() << "Error creating Hanoi polygon in database:" << e.what();
         qDebug() << "Application will continue without database polygon";
     }
+}
+
+void MapWidget::loadExistingAircraft()
+{
+    if (!m_aircraftManager) {
+        qDebug() << "Aircraft manager not initialized, cannot load aircraft";
+        return;
+    }
+    
+    qDebug() << "Loading existing aircraft from database";
+    
+    // Load aircraft from database using DatabaseService
+    DatabaseService& dbService = DatabaseService::instance();
+    QVector<Aircraft*> existingAircraft = dbService.loadAllAircraft(this);
+    
+    qDebug() << "Found" << existingAircraft.size() << "aircraft in database";
+    
+    // Add existing aircraft to the manager and layer
+    for (Aircraft* aircraft : existingAircraft) {
+        if (aircraft) {
+            // Add to aircraft manager (this will trigger signals to add to layer)
+            m_aircraftManager->addExistingAircraft(aircraft);
+            
+            // Restart movement if aircraft was moving when last saved
+            if (aircraft->isMoving()) {
+                aircraft->startMovement();
+                qDebug() << "Restarted movement for aircraft:" << aircraft->getCallSign();
+            }
+            
+            qDebug() << "Loaded aircraft:" << aircraft->getCallSign() 
+                     << "at position:" << aircraft->position()
+                     << "moving:" << aircraft->isMoving();
+        }
+    }
+    
+    // If no aircraft found in database, create sample aircraft for demo
+    if (existingAircraft.isEmpty()) {
+        qDebug() << "No aircraft found in database, creating sample aircraft";
+        createSampleAircraft();
+    } else {
+        qDebug() << "Successfully loaded" << existingAircraft.size() << "aircraft from database";
+    }
+}
+
+void MapWidget::refreshPolygons()
+{
+    fetchPostgis();
+    update();
 }

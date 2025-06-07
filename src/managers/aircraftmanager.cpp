@@ -39,6 +39,36 @@ Aircraft* AircraftManager::createAircraft(const QPointF& startPosition)
     return aircraft;
 }
 
+void AircraftManager::addExistingAircraft(Aircraft* aircraft)
+{
+    if (!aircraft) {
+        qDebug() << "Cannot add null aircraft";
+        return;
+    }
+    
+    // Check if aircraft already exists in our list
+    if (m_aircrafts.contains(aircraft)) {
+        qDebug() << "Aircraft already exists in manager";
+        return;
+    }
+    
+    // Connect destruction signal
+    connect(aircraft, &QObject::destroyed, 
+            this, &AircraftManager::onAircraftDestroyed);
+    
+    // Set parent to this manager 
+    aircraft->setParent(this);
+    
+    m_aircrafts.append(aircraft);
+    
+    emit aircraftCreated(aircraft);
+    emit aircraftCountChanged(m_aircrafts.size());
+    
+    qDebug() << "Added existing aircraft" << aircraft->getCallSign() 
+             << "at position" << aircraft->position() 
+             << "Total:" << m_aircrafts.size();
+}
+
 void AircraftManager::removeAircraft(Aircraft* aircraft)
 {
     if (!aircraft || !m_aircrafts.contains(aircraft)) {

@@ -19,6 +19,7 @@ public:
 
     // Aircraft management
     Aircraft* createAircraft(const QPointF& startPosition = QPointF());
+    void addExistingAircraft(Aircraft* aircraft);  // Add existing aircraft from database
     void removeAircraft(Aircraft* aircraft);
     void clearAllAircraft();
     
