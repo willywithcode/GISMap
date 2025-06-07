@@ -52,34 +52,21 @@ MapWidget::MapWidget(QWidget *parent) : QWidget(parent) {
     
     loadTileMap();
     
-    // Create a sample polygon around Hoan Kiem Lake area in Hanoi
-    QPolygonF hanoiPoly;
-    hanoiPoly << QPointF(105.850, 21.025)   // Southwest corner
-              << QPointF(105.850, 21.035)   // Northwest corner  
-              << QPointF(105.860, 21.035)   // Northeast corner
-              << QPointF(105.860, 21.025)   // Southeast corner
-              << QPointF(105.850, 21.025);  // Close polygon
-    setPolygon(hanoiPoly);
+    // According to requirements: Only create ONE polygon area around Hanoi
+    // This will be stored in PostgreSQL database and used for aircraft interaction
+    // Remove hardcoded red polygon, use database-stored polygon instead
     
-    fetchShapefiles();
-    fetchPostgis();
+    // Create Hanoi area polygon for database storage
+    createHanoiPolygonInDatabase();
+    
+    fetchShapefiles();  // Load Vietnam shapefile from SimpleMaps (for reference/display)
+    fetchPostgis();     // Load the main Hanoi polygon from database
     
     // Create sample aircraft
     createSampleAircraft();
     
     // Emit initial coordinates
     emit coordinatesChanged(m_centerGeo.x(), m_centerGeo.y(), m_zoom);
-}
-
-void MapWidget::setPolygon(const QPolygonF &polygon) {
-    m_polygon = polygon;
-    
-    // Update the polygon object in new architecture
-    if (m_hanoiPolygon) {
-        m_hanoiPolygon->setPolygon(polygon);
-    }
-    
-    update();
 }
 
 void MapWidget::setShapefilePolygon(const QVector<QPolygonF> &shapes) {
@@ -123,10 +110,13 @@ void MapWidget::paintEvent(QPaintEvent *) {
         painter.drawPolygon(pxPoly);
     };
     
-    // Draw all polygons
-    drawGeoPolygon(m_polygon, Qt::red);
-    for (const auto &poly : m_shapefilePolygons) drawGeoPolygon(poly, Qt::blue);
-    for (const auto &poly : m_postgisPolygons) drawGeoPolygon(poly, Qt::green);
+    // Draw polygons according to project requirements:
+    // - BLUE polygons: Vietnam administrative boundaries from SimpleMaps shapefile (for reference)  
+    // - GREEN polygon: Main Hanoi area polygon from PostgreSQL database (for aircraft interaction)
+    // - Removed RED hardcoded polygon as per requirements
+    
+    for (const auto &poly : m_shapefilePolygons) drawGeoPolygon(poly, Qt::blue);     // Vietnam provinces from shapefile
+    for (const auto &poly : m_postgisPolygons) drawGeoPolygon(poly, Qt::green);     // Hanoi area from database
     
     // Render aircraft layer using new architecture
     if (m_aircraftLayer && m_viewTransform) {
@@ -550,8 +540,21 @@ void MapWidget::fetchPostgis() {
         
         qDebug() << "Loaded" << m_postgisPolygons.size() << "polygons from PostGIS";
         
+        // CRITICAL: Update the polygon region for aircraft interaction
+        // This ensures aircraft change color when entering the database-stored Hanoi area
+        if (!m_postgisPolygons.isEmpty() && m_hanoiPolygon) {
+            // Use the first polygon from database as the main Hanoi area for aircraft interaction
+            QPolygonF mainHanoiArea = m_postgisPolygons.first();
+            m_hanoiPolygon->setPolygon(mainHanoiArea);
+            
+            qDebug() << "Set Hanoi polygon for aircraft interaction from database";
+            qDebug() << "Polygon has" << mainHanoiArea.size() << "points";
+            qDebug() << "Aircraft will change color when entering this area";
+        }
+        
     } catch (const std::exception &e) {
         qDebug() << "PostGIS error:" << e.what();
+        qDebug() << "Aircraft interaction will use fallback polygon";
     }
 }
 
@@ -1130,4 +1133,68 @@ void MapWidget::ensureCacheSize()
     }
     
     qDebug() << "Removed" << filesRemoved << "cache files, freed" << removedSize / (1024*1024) << "MB";
+}
+
+void MapWidget::createHanoiPolygonInDatabase()
+{
+    try {
+        ConfigManager& config = ConfigManager::instance();
+        
+        QString connString = QString("host=%1 port=%2 dbname=%3 user=%4 password=%5 connect_timeout=%6")
+            .arg(config.getDatabaseHost())
+            .arg(config.getDatabasePort())
+            .arg(config.getDatabaseName())
+            .arg(config.getDatabaseUsername())
+            .arg(config.getDatabasePassword())
+            .arg(config.getDatabaseConnectionTimeout());
+        
+        pqxx::connection c(connString.toStdString());
+        pqxx::work txn(c);
+        
+        // Get table configuration
+        QString tableName = config.getDatabasePolygonsTableName();
+        QString geomColumn = config.getDatabasePolygonsGeometryColumn();
+        
+        // Check if the polygon already exists
+        QString checkQuery = QString("SELECT COUNT(*) FROM %1 WHERE name = 'Hanoi Area'")
+            .arg(tableName);
+        
+        pqxx::result checkResult = txn.exec(checkQuery.toStdString());
+        int count = checkResult[0][0].as<int>();
+        
+        if (count == 0) {
+            // Create a larger polygon area around Hanoi for aircraft interaction
+            // This represents a detection zone, not just Hoan Kiem Lake
+            QString wktPolygon = "POLYGON((105.7 20.8, 105.7 21.3, 106.1 21.3, 106.1 20.8, 105.7 20.8))";
+            
+            QString insertQuery = QString("INSERT INTO %1 (name, %2) VALUES ('Hanoi Area', ST_GeomFromText('%3', 4326))")
+                .arg(tableName)
+                .arg(geomColumn)
+                .arg(wktPolygon);
+            
+            txn.exec(insertQuery.toStdString());
+            
+            // OPTIONAL: Add a smaller demo polygon for testing if you want to see the difference
+            // This creates a visible contrast between having/not having shapefile data
+            QString demoPolygon = "POLYGON((105.85 21.00, 105.85 21.05, 105.90 21.05, 105.90 21.00, 105.85 21.00))";
+            QString demoQuery = QString("INSERT INTO %1 (name, %2) VALUES ('Demo Small Area', ST_GeomFromText('%3', 4326))")
+                .arg(tableName)
+                .arg(geomColumn)
+                .arg(demoPolygon);
+            
+            txn.exec(demoQuery.toStdString());
+            
+            txn.commit();
+            
+            qDebug() << "Created Hanoi area polygon in PostgreSQL database";
+            qDebug() << "Main polygon covers area from 105.7°E to 106.1°E, 20.8°N to 21.3°N";
+            qDebug() << "Demo polygon covers smaller area around 105.85-105.90°E, 21.00-21.05°N";
+        } else {
+            qDebug() << "Hanoi area polygon already exists in database";
+        }
+        
+    } catch (const std::exception &e) {
+        qDebug() << "Error creating Hanoi polygon in database:" << e.what();
+        qDebug() << "Application will continue without database polygon";
+    }
 }

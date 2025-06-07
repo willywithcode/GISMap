@@ -26,7 +26,6 @@ class MapWidget : public QWidget {
     
 public:
     explicit MapWidget(QWidget *parent = nullptr);
-    void setPolygon(const QPolygonF &polygon);
     void setShapefilePolygon(const QVector<QPolygonF> &shapes);
     void setPostgisPolygon(const QVector<QPolygonF> &shapes);
     
@@ -67,6 +66,7 @@ private:
     void drawPolygons(QPainter &painter, const QVector<QPolygonF> &polygons, QColor color = Qt::blue);
     void fetchShapefiles();
     void fetchPostgis();
+    void createHanoiPolygonInDatabase();  // Create Hanoi area polygon in PostgreSQL database
     QPixmap createFallbackTile(int tileX, int tileY) const;
     
     // New architecture methods
