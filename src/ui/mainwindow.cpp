@@ -65,9 +65,32 @@ void MainWindow::updateStatusBar(double lon, double lat, int zoom) {
 void MainWindow::onAircraftSelected(Aircraft* aircraft)
 {
     if (aircraft) {
-        QString info = QString("Selected: %1").arg(aircraft->getInfo());
+        // Connect to position updates for real-time coordinate display
+        connect(aircraft, &Aircraft::positionChanged, this, [this, aircraft](const QPointF& position) {
+            if (aircraft == m_mapWidget->aircraftLayer()->selectedAircraft()) {
+                QString info = QString("Selected Aircraft - Lon: %1, Lat: %2, Heading: %3°, State: %4")
+                              .arg(position.x(), 0, 'f', 6)
+                              .arg(position.y(), 0, 'f', 6)
+                              .arg(aircraft->heading(), 0, 'f', 1)
+                              .arg(aircraft->state() == Aircraft::Normal ? "Normal" : 
+                                   aircraft->state() == Aircraft::InRegion ? "In Region" : "Selected");
+                m_aircraftLabel->setText(info);
+            }
+        });
+        
+        // Initial display
+        QString info = QString("Selected Aircraft - Lon: %1, Lat: %2, Heading: %3°, State: %4")
+                      .arg(aircraft->position().x(), 0, 'f', 6)
+                      .arg(aircraft->position().y(), 0, 'f', 6)
+                      .arg(aircraft->heading(), 0, 'f', 1)
+                      .arg(aircraft->state() == Aircraft::Normal ? "Normal" : 
+                           aircraft->state() == Aircraft::InRegion ? "In Region" : "Selected");
         m_aircraftLabel->setText(info);
-        statusBar()->showMessage("Aircraft selected - click elsewhere to deselect", 3000);
+        statusBar()->showMessage("Aircraft selected - coordinates updating in real-time", 3000);
+    } else {
+        // Aircraft deselected
+        m_aircraftLabel->setText("No aircraft selected");
+        statusBar()->showMessage("Aircraft deselected", 2000);
     }
 }
 

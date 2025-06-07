@@ -1,10 +1,10 @@
 {
   "aircraft": {
-    "default_speed": 0.1,
-    "update_interval_ms": 1000,
-    "icon_size": 20,
-    "selection_radius": 15,
-    "max_aircraft": 100,
+    "default_speed": 0.0005,
+    "update_interval_ms": 500,
+    "icon_size": 24,
+    "selection_radius": 20,
+    "max_aircraft": 50,
     "boundary_bounce": true
   },
   "colors": {
@@ -21,8 +21,8 @@
       "max_latitude": 22.0
     },
     "random_velocity_range": {
-      "min": -0.002,
-      "max": 0.002
+      "min": -0.001,
+      "max": 0.001
     }
   },
   "regions": {

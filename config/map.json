@@ -1,31 +1,34 @@
 {
   "map": {
     "default_center": {
-      "longitude": 105.85,
-      "latitude": 21.03
+      "longitude": 105.8542,
+      "latitude": 21.0285
     },
-    "default_zoom": 12,
-    "min_zoom": 3,
+    "default_zoom": 13,
+    "min_zoom": 10,
     "max_zoom": 18,
-    "tile_size": 256
+    "tile_size": 256,
+    "pan_bounds": {
+      "min_longitude": 105.0,
+      "max_longitude": 107.0,
+      "min_latitude": 20.5,
+      "max_latitude": 21.5
+    }
   },
   "tile_servers": {
     "openstreetmap": {
-      "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      "attribution": "© OpenStreetMap contributors",
-      "max_zoom": 19,
-      "enabled": true
+      "name": "OpenStreetMap",
+      "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
     },
     "satellite": {
-      "url": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      "attribution": "© Esri",
-      "max_zoom": 17,
-      "enabled": false
+      "name": "Satellite",
+      "url": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
     }
   },
   "cache": {
     "enabled": true,
-    "max_size_mb": 100,
-    "cache_directory": "resources/tiles"
+    "cache_directory": "resources/tiles",
+    "max_size_mb": 200,
+    "cleanup_interval_hours": 24
   }
 }

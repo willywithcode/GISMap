@@ -52,6 +52,8 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 private slots:
     void onAircraftSelected(Aircraft* aircraft);
@@ -113,4 +115,12 @@ private:
     // Asynchronous loading components
     QNetworkAccessManager* m_networkManager;
     QMap<QString, QPair<QPoint, QPoint>> m_pendingTiles; // URL -> (tile coords, offset coords)
+    
+    // Update timer for smooth animation
+    QTimer* m_updateTimer;
+    
+    // Drag functionality
+    bool m_dragging;
+    QPointF m_lastPanPoint;
+    QPointF m_dragStartGeo;
 };

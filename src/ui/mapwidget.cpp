@@ -14,6 +14,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QDateTime>
+#include <QtMath>
 #include <algorithm>
 #include <cmath>
 #include <gdal.h>
@@ -26,7 +27,9 @@
 #include "polygonobject.h"
 
 MapWidget::MapWidget(QWidget *parent) : QWidget(parent) {
-    setMinimumSize(800, 600);
+    // Remove fixed minimum size, use size policy instead
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    setMinimumSize(400, 300);  // Set reasonable minimum but allow expansion
     
     // Initialize configuration-based settings
     initializeFromConfig();
@@ -36,6 +39,16 @@ MapWidget::MapWidget(QWidget *parent) : QWidget(parent) {
     
     // Initialize network manager for async tile loading
     m_networkManager = new QNetworkAccessManager(this);
+    
+    // Add timer for regular updates to ensure aircraft movement is visible
+    m_updateTimer = new QTimer(this);
+    connect(m_updateTimer, &QTimer::timeout, this, [this]() {
+        update(); // Force repaint to show aircraft movement
+    });
+    m_updateTimer->start(100); // Update every 100ms for smooth animation
+    
+    // Initialize drag state
+    m_dragging = false;
     
     loadTileMap();
     
@@ -83,6 +96,9 @@ void MapWidget::paintEvent(QPaintEvent *) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     
+    // Fill background with neutral color to avoid white gaps
+    painter.fillRect(rect(), QColor(230, 240, 250)); // Light blue-gray background
+    
     // Draw tiles
     drawTiles(painter);
     
@@ -119,8 +135,18 @@ void MapWidget::paintEvent(QPaintEvent *) {
     }
 }
 
-void MapWidget::resizeEvent(QResizeEvent *) {
+void MapWidget::resizeEvent(QResizeEvent *event) {
+    QWidget::resizeEvent(event);
+    
+    qDebug() << "MapWidget resized to:" << size();
+    
+    // Force reload tiles to ensure full coverage after resize
+    m_centerTileX = -999;  // Force reload
+    m_centerTileY = -999;
     loadTileMap();
+    
+    // Update view transform with new size
+    updateViewTransform();
 }
 
 void MapWidget::wheelEvent(QWheelEvent *event) {
@@ -149,21 +175,75 @@ void MapWidget::mousePressEvent(QMouseEvent *event) {
             }
         }
         
-        // Legacy behavior: recenter map on click
-        QPointF pixelCenter = QPointF(width() / 2.0, height() / 2.0);
-        QPointF pixelClick = event->pos();
-        QPointF pixelOffset = pixelClick - pixelCenter;
+        // Start drag operation
+        m_dragging = true;
+        m_lastPanPoint = event->pos();
+        m_dragStartGeo = m_centerGeo;
+        setCursor(Qt::ClosedHandCursor);
+    }
+    event->accept();
+}
+
+void MapWidget::mouseMoveEvent(QMouseEvent *event) {
+    if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+        // Calculate drag offset in pixels
+        QPointF currentPos = event->pos();
+        QPointF dragOffset = currentPos - m_lastPanPoint;
         
-        // Convert pixel offset to geographic offset using config tile size
-        double scale = m_tileSize * (1 << m_zoom);
-        double lon = m_centerGeo.x() + (pixelOffset.x() * 360.0) / scale;
-        double lat_rad = atan(sinh((m_centerGeo.y() * M_PI / 180.0) + (pixelOffset.y() * 2.0 * M_PI) / scale));
-        double lat = lat_rad * 180.0 / M_PI;
+        // Convert pixel offset to geographic offset using Web Mercator
+        // At current zoom level, calculate how much geographic distance each pixel represents
+        double scale = (1 << m_zoom) * m_tileSize; // Total pixels at this zoom level
         
-        // Recenter map on click position
-        m_centerGeo = QPointF(lon, lat);
+        // Longitude conversion (straightforward)
+        double lonOffset = -(dragOffset.x() * 360.0) / scale;
+        
+        // Latitude conversion (needs to account for Web Mercator projection)
+        double currentLatRad = m_dragStartGeo.y() * M_PI / 180.0;
+        double latScale = scale * cos(currentLatRad); // Account for latitude scaling
+        double latOffset = (dragOffset.y() * 360.0) / latScale;
+        
+        // Calculate new center position
+        double newLon = m_dragStartGeo.x() + lonOffset;
+        double newLat = m_dragStartGeo.y() + latOffset;
+        
+        // Apply geographic constraints for Hanoi area
+        newLon = qBound(105.0, newLon, 107.0);
+        newLat = qBound(20.5, newLat, 21.5);
+        
+        // Update center position
+        m_centerGeo = QPointF(newLon, newLat);
+        
+        // Force update view transform immediately
+        updateViewTransform();
+        
+        // Force reload tiles every time during drag for responsiveness
+        m_centerTileX = -999; // Force tile reload
+        m_centerTileY = -999; 
         loadTileMap();
+        
+        // Update display immediately
+        update();
         emit coordinatesChanged(m_centerGeo.x(), m_centerGeo.y(), m_zoom);
+    }
+    event->accept();
+}
+
+void MapWidget::mouseReleaseEvent(QMouseEvent *event) {
+    if (event->button() == Qt::LeftButton && m_dragging) {
+        m_dragging = false;
+        setCursor(Qt::ArrowCursor);
+        
+        // Force update view transform one more time
+        updateViewTransform();
+        
+        // Final tile load to ensure we have all needed tiles
+        // Reset center tile coordinates to ensure proper reload
+        m_centerTileX = -999;
+        m_centerTileY = -999;
+        loadTileMap();
+        
+        // Trigger final update
+        update();
     }
     event->accept();
 }
@@ -173,9 +253,13 @@ void MapWidget::loadTileMap() {
     int newCenterTileX = (int)((m_centerGeo.x() + 180.0) / 360.0 * (1 << m_zoom));
     int newCenterTileY = (int)((1.0 - log(tan(m_centerGeo.y() * M_PI / 180.0) + 1.0 / cos(m_centerGeo.y() * M_PI / 180.0)) / M_PI) / 2.0 * (1 << m_zoom));
     
-    // Only reload if center has changed significantly
-    if (abs(newCenterTileX - m_centerTileX) < 2 && abs(newCenterTileY - m_centerTileY) < 2 && !m_tiles.isEmpty()) {
-        return; // Don't reload if we haven't moved much
+    // Only reload if center has changed significantly or tiles are empty
+    // BUT: Always reload if we're dragging to ensure smooth tile updates
+    if (!m_dragging && 
+        abs(newCenterTileX - m_centerTileX) < 1 && 
+        abs(newCenterTileY - m_centerTileY) < 1 && 
+        !m_tiles.isEmpty()) {
+        return; // Don't reload if we haven't moved much and not dragging
     }
     
     m_centerTileX = newCenterTileX;
@@ -183,19 +267,25 @@ void MapWidget::loadTileMap() {
     
     qDebug() << "Center tile coordinates:" << m_centerTileX << m_centerTileY << "at zoom" << m_zoom;
     
-    // Calculate how many tiles we need to cover the widget (using config tile size)
-    int tilesX = qMin(4, (width() / m_tileSize) + 2);  // Limit to 4 tiles max
-    int tilesY = qMin(4, (height() / m_tileSize) + 2);
+    // Calculate how many tiles we need to cover the widget completely
+    int tilesX = (width() / m_tileSize) + 3;   // Add extra tiles to ensure full coverage
+    int tilesY = (height() / m_tileSize) + 3;  // Add extra tiles to ensure full coverage
+    
+    // Set reasonable maximums to avoid performance issues
+    tilesX = qMin(tilesX, 8);  // Maximum 8 tiles horizontally
+    tilesY = qMin(tilesY, 6);  // Maximum 6 tiles vertically
+    
+    qDebug() << "Widget size:" << width() << "x" << height() << "Tile grid:" << tilesX << "x" << tilesY;
     
     m_tiles.clear();
     m_tilePositions.clear();
     
-    QNetworkAccessManager manager;
-    
     // Get current tile server URL template
     QString urlTemplate = getCurrentTileServerUrl();
     
-    // Load tiles in a grid around the center
+    // Load tiles in a grid around the center - prioritize cached tiles first
+    QVector<QPair<QPoint, QPoint>> tilesToLoad; // (tile coords, offset coords)
+    
     for (int dx = -tilesX/2; dx <= tilesX/2; dx++) {
         for (int dy = -tilesY/2; dy <= tilesY/2; dy++) {
             int tileX = m_centerTileX + dx;
@@ -212,80 +302,73 @@ void MapWidget::loadTileMap() {
             if (loadTileFromCache(m_zoom, tileX, tileY, m_activeTileServer, tile)) {
                 m_tiles.append(tile);
                 m_tilePositions.append(QPoint(dx, dy));
-                continue; // Skip network download
-            }
-            
-            // If not in cache, download from server
-            QString url = urlTemplate;
-            url.replace("{z}", QString::number(m_zoom));
-            url.replace("{x}", QString::number(tileX));
-            url.replace("{y}", QString::number(tileY));
-            
-            qDebug() << "Downloading tile:" << url;
-            
-            QNetworkRequest request{QUrl(url)};
-            // Add proper headers to avoid being blocked
-            request.setHeader(QNetworkRequest::UserAgentHeader, "GISMap/1.0 (Qt Application)");
-            request.setRawHeader("Referer", "https://www.openstreetmap.org/");
-            
-            QEventLoop loop;
-            QNetworkReply *reply = manager.get(request);
-            QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-            
-            // Add timeout to prevent hanging
-            QTimer::singleShot(10000, &loop, &QEventLoop::quit);
-            loop.exec();
-            
-            if (reply->error() == QNetworkReply::NoError) {
-                tile.loadFromData(reply->readAll());
-                if (!tile.isNull()) {
-                    // Save to cache
-                    saveTileToCache(m_zoom, tileX, tileY, m_activeTileServer, tile);
-                    
-                    m_tiles.append(tile);
-                    m_tilePositions.append(QPoint(dx, dy));
-                    qDebug() << "Successfully downloaded and cached tile at offset" << dx << dy;
-                } else {
-                    // Create fallback tile if data is invalid
-                    tile = createFallbackTile(tileX, tileY);
-                    m_tiles.append(tile);
-                    m_tilePositions.append(QPoint(dx, dy));
-                    qDebug() << "Created fallback tile for invalid data at offset" << dx << dy;
-                }
+                qDebug() << "Loaded tile from cache at offset:" << dx << dy;
             } else {
-                qDebug() << "Failed to download tile:" << url << reply->errorString();
-                // Create fallback tile when network fails
-                tile = createFallbackTile(tileX, tileY);
-                m_tiles.append(tile);
+                // Add to async loading queue
+                tilesToLoad.append(qMakePair(QPoint(tileX, tileY), QPoint(dx, dy)));
+                
+                // Create placeholder tile for immediate display
+                QPixmap placeholder = createFallbackTile(tileX, tileY);
+                m_tiles.append(placeholder);
                 m_tilePositions.append(QPoint(dx, dy));
-                qDebug() << "Created fallback tile due to network error at offset" << dx << dy;
             }
-            reply->deleteLater();
         }
     }
-    qDebug() << "Total tiles loaded:" << m_tiles.size();
+    
+    // Start async loading for missing tiles
+    for (const auto& tilePair : tilesToLoad) {
+        QPoint tileCoords = tilePair.first;
+        QPoint offsetCoords = tilePair.second;
+        loadTileAsync(m_zoom, tileCoords.x(), tileCoords.y(), offsetCoords.x(), offsetCoords.y());
+    }
+    
+    qDebug() << "Total tiles loaded:" << m_tiles.size() << "Async loading:" << tilesToLoad.size();
     update();
     
-    // Trigger tile prefetching for smoother navigation
-    QTimer::singleShot(1000, this, [this]() { prefetchTiles(2); });
+    // Trigger tile prefetching for smoother navigation (but not during drag for performance)
+    if (!m_dragging) {
+        QTimer::singleShot(500, this, [this]() { prefetchTiles(1); });
+    }
 }
 
 void MapWidget::drawTiles(QPainter &painter) {
     if (m_tiles.isEmpty()) return;
     
-    // Calculate center pixel position
+    // Calculate the pixel position of the current center
     QPointF centerPixel = geoToPixel(m_centerGeo.x(), m_centerGeo.y(), m_zoom);
+    
+    // Calculate the pixel position of the center tile
+    double centerTilePixelX = (m_centerTileX + 0.5) * m_tileSize;
+    double centerTilePixelY = (m_centerTileY + 0.5) * m_tileSize;
+    
+    // Calculate offset between actual center and center tile center
+    double offsetX = centerPixel.x() - centerTilePixelX;
+    double offsetY = centerPixel.y() - centerTilePixelY;
     
     // Draw each tile at its correct position
     for (int i = 0; i < m_tiles.size(); ++i) {
         QPoint tileOffset = m_tilePositions[i];
         
-        // Calculate tile position in widget coordinates using config tile size
-        int x = width() / 2 + tileOffset.x() * m_tileSize - m_tileSize/2;
-        int y = height() / 2 + tileOffset.y() * m_tileSize - m_tileSize/2;
+        // Calculate tile position in widget coordinates
+        // Position relative to center of widget, accounting for geographic offset
+        double x = width() / 2 + tileOffset.x() * m_tileSize - offsetX;
+        double y = height() / 2 + tileOffset.y() * m_tileSize - offsetY;
         
-        QRect tileRect(x, y, m_tileSize, m_tileSize);
-        painter.drawPixmap(tileRect, m_tiles[i]);
+        // Create tile rectangle, ensuring it covers any potential fractional pixels
+        QRect tileRect(static_cast<int>(floor(x)), static_cast<int>(floor(y)), 
+                       m_tileSize + 1, m_tileSize + 1);
+        
+        // Only draw if tile is at least partially visible
+        QRect widgetRect(0, 0, width(), height());
+        if (tileRect.intersects(widgetRect)) {
+            painter.drawPixmap(tileRect, m_tiles[i]);
+        }
+    }
+    
+    // Debug: Draw widget boundaries to check coverage
+    if (qgetenv("DEBUG_TILES") == "1") {
+        painter.setPen(QPen(Qt::red, 2));
+        painter.drawRect(0, 0, width()-1, height()-1);
     }
 }
 
@@ -308,8 +391,52 @@ void MapWidget::fetchShapefile() {
     
     ConfigManager& config = ConfigManager::instance();
     
+    // First try to download Vietnam shapefile from simplemaps
+    QString shapefileUrl = "https://simplemaps.com/static/data/country-cities/vn/vn.zip";
+    QString localShapefilePath = "resources/shapefiles/vn.shp";
+    
+    // Create directory if it doesn't exist
+    QDir().mkpath("resources/shapefiles");
+    
+    // Download shapefile if not exists locally
+    if (!QFile::exists(localShapefilePath)) {
+        qDebug() << "Downloading Vietnam shapefile from simplemaps...";
+        
+        QNetworkAccessManager manager;
+        QNetworkRequest request{QUrl(shapefileUrl)};
+        request.setHeader(QNetworkRequest::UserAgentHeader, "GISMap/1.0 (Qt Application)");
+        
+        QEventLoop loop;
+        QNetworkReply *reply = manager.get(request);
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        
+        // Add timeout
+        QTimer::singleShot(30000, &loop, &QEventLoop::quit);
+        loop.exec();
+        
+        if (reply->error() == QNetworkReply::NoError) {
+            QByteArray zipData = reply->readAll();
+            
+            // Save zip file temporarily
+            QString zipPath = "resources/shapefiles/vn.zip";
+            QFile zipFile(zipPath);
+            if (zipFile.open(QIODevice::WriteOnly)) {
+                zipFile.write(zipData);
+                zipFile.close();
+                qDebug() << "Downloaded shapefile zip to:" << zipPath;
+                
+                // TODO: Extract zip file (would need additional library like QuaZip)
+                // For now, we'll use local files if available
+            }
+        } else {
+            qDebug() << "Failed to download shapefile:" << reply->errorString();
+        }
+        reply->deleteLater();
+    }
+    
     // Try to load each configured shapefile
     QStringList shapefilePaths = {
+        localShapefilePath,
         "resources/shapefiles/vn.shp",
         "vn.shp"  // Fallback to current directory
     };
@@ -324,7 +451,7 @@ void MapWidget::fetchShapefile() {
             poLayer->ResetReading();
             
             int featureCount = 0;
-            while ((poFeature = poLayer->GetNextFeature()) != nullptr && featureCount < 1000) {
+            while ((poFeature = poLayer->GetNextFeature()) != nullptr && featureCount < 100) { // Limit for performance
                 OGRGeometry *poGeometry = poFeature->GetGeometryRef();
                 if (poGeometry && wkbFlatten(poGeometry->getGeometryType()) == wkbPolygon) {
                     OGRPolygon *poPolygon = (OGRPolygon *) poGeometry;
@@ -842,27 +969,45 @@ void MapWidget::createSampleAircraft()
     qDebug() << "Creating sample aircraft";
     
     // Create several aircraft at different positions around Hanoi
+    // Some starting from Gulf of Tonkin (east) moving toward Hanoi
     QVector<QPointF> startPositions = {
-        QPointF(105.840, 21.020),  // Southwest of Hoan Kiem Lake
-        QPointF(105.855, 21.015),  // Southeast of Hoan Kiem Lake  
-        QPointF(105.845, 21.040),  // Northwest of Hoan Kiem Lake
-        QPointF(105.865, 21.030),  // Northeast of Hoan Kiem Lake
-        QPointF(105.850, 21.025)   // Near center (should be in region)
+        QPointF(106.2, 20.8),   // From Gulf of Tonkin, moving west
+        QPointF(106.1, 21.1),   // From northeast, moving southwest  
+        QPointF(105.3, 21.2),   // From west, moving east
+        QPointF(105.4, 20.7),   // From southwest, moving northeast
+        QPointF(105.85, 21.03), // Starting in Hanoi center
+        QPointF(106.0, 21.0),   // From east, moving west through Hanoi
+        QPointF(105.5, 21.1)    // From west, moving east through Hanoi
     };
     
-    for (const QPointF& position : startPositions) {
+    // Corresponding velocities to ensure aircraft move through Hanoi region
+    QVector<QPointF> velocities = {
+        QPointF(-0.0008, 0.0003),  // Moving west-northwest
+        QPointF(-0.0005, -0.0006), // Moving southwest
+        QPointF(0.0007, -0.0002),  // Moving east-southeast
+        QPointF(0.0006, 0.0008),   // Moving northeast
+        QPointF(0.0003, 0.0004),   // Moving northeast slowly
+        QPointF(-0.0009, 0.0001),  // Moving west through Hanoi
+        QPointF(0.0008, -0.0003)   // Moving east through Hanoi
+    };
+    
+    for (int i = 0; i < startPositions.size(); ++i) {
+        const QPointF& position = startPositions[i];
+        const QPointF& velocity = velocities[i];
+        
         Aircraft* aircraft = m_aircraftManager->createAircraft(position);
         if (aircraft) {
-            // Set random velocity for movement
-            double velocityMag = 0.0001; // Small velocity for slow movement
-            double angle = (rand() % 360) * M_PI / 180.0;
-            aircraft->setVelocity(QPointF(velocityMag * cos(angle), velocityMag * sin(angle)));
-            aircraft->setHeading(angle * 180.0 / M_PI);
+            // Set specific velocity for this aircraft
+            aircraft->setVelocity(velocity);
+            
+            // Calculate heading from velocity
+            double heading = qAtan2(velocity.x(), velocity.y()) * 180.0 / M_PI;
+            aircraft->setHeading(heading);
             
             // Start movement
             aircraft->startMovement();
             
-            qDebug() << "Created aircraft at position:" << position;
+            qDebug() << "Created aircraft at position:" << position << "with velocity:" << velocity;
         }
     }
     
